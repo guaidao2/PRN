@@ -41,7 +41,11 @@ Input → Phase Encoder → [Resonant Block × L] → Hyperbolic Mapper → Mani
 - **10/13 只跑赢买入持有基准**
 - 平均超额收益 **+174%**
 
-详见 [论文](paper/PRN_Paper.md)
+## 论文
+
+- [PRN_Paper.md](paper/PRN_Paper.md) — PRN: 谐振多项式神经网络（原始架构）
+- [UST_Paper.md](paper/UST_Paper.md) — UST: 通用缩放定理
+- [QuantNN_Paper.md](paper/QuantNN_Paper.md) — QuantNN: 基于改造 PRN 的量化交易框架
 
 ## 快速开始
 
