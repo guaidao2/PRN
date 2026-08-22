@@ -1,9 +1,6 @@
 """
 PRN (Polyphase Resonance Network) — 核心实现
 
-架构与神经元设计: coolmoon
-实现与实验验证: guaidao2
-
 基于论文: Resonant Polynomial Neuron (RePoN) + Polyphase Resonance Network (PRN)
 
 组件:
@@ -134,22 +131,45 @@ class RePoN(nn.Module):
         out_real = torch.einsum('...dk,kc->...dc', cheb, pw_real)
         out_imag = torch.einsum('...dk,kc->...dc', cheb, pw_imag)
         
-        # Take magnitude: |real + i*imag| ≈ real (dominant part for real inputs)
-        output = out_real  # [..., d, C] — use real part as in original paper
+        # Hebbian-modulated output: 基础权重 + Hebbian快速适应权重
+        if self.use_hebbian:
+            # hebbian_w: [K, C] — 通过外积累积的经验权重
+            # 与基础权重相乘: cheb[...,d,k] * hebbian_w[k,c] → [..., d, C]
+            hebbian_out = torch.einsum('...dk,kc->...dc', cheb, self.hebbian_w)
+            output = out_real + 0.3 * hebbian_out  # 混合基础和Hebbian
+        else:
+            output = out_real  # [..., d, C]
         
-        # Hebbian fast adaptation (training mode)
-        if self.training and self.use_hebbian:
+        # Hebbian fast adaptation — 真正的局部学习，不需要反向传播
+        # 只在训练模式下更新，推理时使用已积累的 hebbian_w/alpha
+        if self.use_hebbian and self.training:
             with torch.no_grad():
-                # Local signals
-                g = x.mean(dim=-2) if x.dim() > 1 else x  # pre-synaptic
-                z = output.mean(dim=-2) if output.dim() > 1 else output  # post-synaptic
+                # ── Pre-synaptic signal: input 的 Chebyshev 展开 ──
+                # g_j = mean over batch of cheb expansion
+                g = cheb.mean(dim=tuple(range(cheb.dim()-1)))  # [K]
                 
-                # Hebbian weight update
-                g_norm = g / (g.norm() + 1e-8)
-                z_norm = z / (z.norm() + 1e-8)
+                # ── Post-synaptic signal: output 的通道激活 ──
+                # z_c = mean over batch and input dims of output
+                z = output.mean(dim=tuple(range(output.dim()-1)))  # [C]
                 
-                self.hebbian_w += hebbian_lr * g_norm.mean() * z_norm.mean()
+                # ── Hebbian weight update: Δw_jk = η · g_j · z_k ──
+                # 外积: [K, 1] × [1, C] → [K, C]
+                outer = g.unsqueeze(-1) * z.unsqueeze(0)  # [K, C]
+                self.hebbian_w += hebbian_lr * outer
                 self.hebbian_w.clamp_(-1.0, 1.0)
+                
+                # ── Phase tracking: Δα_k = η · sin(θ_target - α_k) ──
+                # 目标频率 = 输入信号的主频 (跳过 T_0，用高阶多项式能量)
+                cheb_energy = cheb.mean(dim=tuple(range(cheb.dim()-1)))  # [K]
+                # 跳过 T_0 (index=0)，从 T_1 开始找最大能量对应的阶数
+                high_order_energy = cheb_energy[1:]  # [K-1]
+                dominant_order = high_order_energy.argmax().item() + 1  # 1-indexed
+                target_freq = dominant_order / self.K * 2 * math.pi
+                self.hebbian_alpha += hebbian_lr * torch.sin(
+                    torch.tensor(target_freq, device=self.alpha.device) - self.alpha)
+                self.hebbian_alpha = self.hebbian_alpha % (2 * math.pi)
+                # 加法混合: 梯度优化 + Hebbian 局部学习，互不覆盖
+                self.alpha.data = 0.7 * self.alpha.data + 0.3 * self.hebbian_alpha
         
         return output
 
@@ -416,8 +436,8 @@ class OutputProjection(nn.Module):
     
     def forward(self, u: torch.Tensor) -> torch.Tensor:
         y = self.proj(u)
-        if self.task == 'classification':
-            return F.softmax(y, dim=-1)
+        # 不在这里做 softmax — CrossEntropyLoss 内部会做 log_softmax
+        # 如果需要概率输出，在推理时手动 softmax
         return y
 
 
