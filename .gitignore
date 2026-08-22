@@ -1,0 +1,31 @@
+# 忽略模型权重和数据缓存
+checkpoints/
+data/cache/
+*.pt
+*.pth
+*.npy
+*.npz
+
+# 私有训练/回测脚本
+train_5min_gpu.py
+backtest_5min.py
+backtest.py
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
