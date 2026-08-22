@@ -73,7 +73,7 @@ python prn/experiments.py
 @article{prn2025,
   title={PRN: Polyphase Resonance Network},
   author={coolmoon and guaidao2},
-  year={2025}
+  year={2026}
 }
 ```
 
